@@ -35,9 +35,13 @@ export class Scene3D {
   private assetsReady: Promise<void>;
   private heroTemplates: (THREE.Group | null)[] = [];
   private dragonTemplate: THREE.Group | null = null;
-  private tilesTex: THREE.Texture | null = null;
+  private floorTex: THREE.Texture | null = null;
+  private wallTex: THREE.Texture | null = null;
+  private bigWallTex: THREE.Texture | null = null;
   private walls!: THREE.InstancedMesh;
-  private wallMeta: { horizontal: boolean; px: number; pz: number; ca: number; cb: number; h1: number; h2: number; bh?: number; byaw?: number; bjx?: number; bjz?: number }[] = [];
+  private wallMeshes: THREE.InstancedMesh[] = [];
+  private wallMeshOff: number[] = [];
+  private wallMeta: { horizontal: boolean; px: number; pz: number; ca: number; cb: number; h1: number; h2: number; variant: number; bh?: number; byaw?: number; bjx?: number; bjz?: number }[] = [];
   private borderBlocks!: THREE.InstancedMesh;
   private cellWalls = new Map<number, number[]>();
   private revealed = new Uint8Array(W * H);
@@ -127,13 +131,23 @@ export class Scene3D {
 
   // ---------------- assets ----------------
   private preloadAssets(): Promise<void> {
-    const texP = new Promise<void>((res) => {
-      new THREE.TextureLoader().load(
-        "textures/tiles.png",
-        (t) => { t.colorSpace = THREE.SRGBColorSpace; this.tilesTex = t; res(); },
-        undefined,
-        () => res(),
-      );
+    const loadTex = (url: string): Promise<THREE.Texture | null> =>
+      new Promise((res) => {
+        new THREE.TextureLoader().load(
+          url,
+          (t) => { t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; res(t); },
+          undefined,
+          () => res(null),
+        );
+      });
+    const texP = Promise.all([
+      loadTex("floor_atlas.png"),
+      loadTex("wall_atlas.png"),
+      loadTex("big_wall.png"),
+    ]).then(([floor, wall, big]) => {
+      this.floorTex = floor;
+      this.wallTex = wall;
+      this.bigWallTex = big;
     });
     const gltf = new GLTFLoader();
     const modelPs = [1, 2, 3, 4, 5, 6, 7, 8].map(
@@ -186,13 +200,18 @@ export class Scene3D {
     return this.glowTex;
   }
 
-  /** One of the 9 tile variants from textures/tiles.png (3×3 atlas) as a material. */
-  private tileMaterial(variant: number, roughness = 0.95): THREE.MeshStandardMaterial {
+  /** Atlas texture: variant index into atlas grid. */
+  private tileMaterial(variant: number, atlas: "floor" | "wall" | "bigwall", roughness = 0.95): THREE.MeshStandardMaterial {
     const mat = new THREE.MeshStandardMaterial({ roughness, metalness: 0.02 });
-    if (this.tilesTex) {
-      const t = this.tilesTex.clone();
-      t.repeat.set(1 / 3, 1 / 3);
-      t.offset.set((variant % 3) / 3, (2 - Math.floor(variant / 3)) / 3);
+    let tex: THREE.Texture | null = null;
+    let cols = 4, rows = 3;
+    if (atlas === "floor") { tex = this.floorTex; cols = 4; rows = 3; }
+    else if (atlas === "wall") { tex = this.wallTex; cols = 4; rows = 3; }
+    else if (atlas === "bigwall") { tex = this.bigWallTex; cols = 4; rows = 4; }
+    if (tex) {
+      const t = tex.clone();
+      t.repeat.set(1 / cols, 1 / rows);
+      t.offset.set((variant % cols) / cols, (rows - 1 - Math.floor(variant / cols)) / rows);
       t.needsUpdate = true;
       mat.map = t;
     }
@@ -212,7 +231,8 @@ export class Scene3D {
           const mats = Array.isArray(m.material) ? m.material : [m.material];
           for (const mm of mats) {
             const sm = mm as THREE.MeshStandardMaterial;
-            if (sm.map && sm.map !== this.tilesTex) sm.map.dispose(); // cloned atlas slices
+            const atlasTexs = [this.floorTex, this.wallTex, this.bigWallTex];
+            if (sm.map && !atlasTexs.includes(sm.map)) sm.map.dispose(); // cloned atlas slices
             mm.dispose();
           }
         }
@@ -237,21 +257,21 @@ export class Scene3D {
     const rnd = mulberryLite(12345);
     const add = (o: THREE.Object3D) => this.boardGroup!.add(o);
 
-    // floors — 9 stone-tile variants from the 3×3 atlas, random per cell
+    // floors — 12 stone-tile variants from floor_atlas (4×3 atlas), random per cell
     const floorGeo = new THREE.BoxGeometry(CELL, 0.22, CELL);
     const m4 = new THREE.Matrix4();
     const col = new THREE.Color();
-    const buckets: number[][] = Array.from({ length: 9 }, () => []);
+    const buckets: number[][] = Array.from({ length: 12 }, () => []);
     for (let z = 0; z < H; z++) {
       for (let x = 0; x < W; x++) {
         if (cells[idx(x, z)].pit) continue; // во рву пола нет — бездна
-        buckets[Math.floor(rnd() * 9)].push(idx(x, z));
+        buckets[Math.floor(rnd() * 12)].push(idx(x, z));
       }
     }
     this.floorMeshes = [];
-    for (let v = 0; v < 9; v++) {
+    for (let v = 0; v < 12; v++) {
       if (!buckets[v].length) continue;
-      const im = new THREE.InstancedMesh(floorGeo, this.tileMaterial(v), buckets[v].length);
+      const im = new THREE.InstancedMesh(floorGeo, this.tileMaterial(v, "floor"), buckets[v].length);
       buckets[v].forEach((ci, k) => {
         const cx = ci % W, cz = Math.floor(ci / W);
         const { wx, wz } = cellToWorld(cx, cz);
@@ -290,21 +310,21 @@ export class Scene3D {
       add(shaft); add(glow);
     }
 
-    // unexplored overlays — плоские тёмные каменные плиты (референс: закрытые тайлы)
+    // unexplored overlays — big_wall atlas (4×4 = 16 variants) for closed tiles
     const overGeo = new THREE.BoxGeometry(CELL * 0.98, 0.42, CELL * 0.98);
-    const overBuckets: number[][] = Array.from({ length: 9 }, () => []);
+    const overBuckets: number[][] = Array.from({ length: 16 }, () => []);
     for (let z = 0; z < H; z++) {
       for (let x = 0; x < W; x++) {
         if (cells[idx(x, z)].pit) continue; // ров виден сразу
-        overBuckets[Math.floor(rnd() * 9)].push(idx(x, z));
+        overBuckets[Math.floor(rnd() * 16)].push(idx(x, z));
       }
     }
     this.overMeshes = [];
     this.overLoc = new Array(W * H).fill(null);
-    for (let v = 0; v < 9; v++) {
+    for (let v = 0; v < 16; v++) {
       if (!overBuckets[v].length) continue;
-      const mat = this.tileMaterial(v, 1);
-      mat.color.setHex(0x383c46); // глубокий тёмно-серый камень закрытых тайлов
+      const mat = this.tileMaterial(v, "bigwall", 1);
+      mat.color.setHex(0x585858); // нейтральный тон, текстура big_wall даёт детали
       const im = new THREE.InstancedMesh(overGeo, mat, overBuckets[v].length);
       overBuckets[v].forEach((ci, k) => {
         const cx = ci % W, cz = Math.floor(ci / W);
@@ -327,26 +347,22 @@ export class Scene3D {
       add(im);
     }
 
-    // walls — каждый пролёт из двух каменных блоков разной высоты (неровная кладка)
+    // walls — каждый пролёт из двух каменных блоков с текстурой wall_atlas (4×3 = 12 variants)
     const wallGeo = new THREE.BoxGeometry(CELL / 2 - 0.05, 1.25, 0.34);
-    const wallMat = this.tileMaterial(1, 0.92);
-    wallMat.color.setHex(0x625e6a); // тёмно-серый камень
     const segs: typeof this.wallMeta = [];
     for (let z = 0; z < H; z++) {
       for (let x = 0; x < W; x++) {
         const c = cells[idx(x, z)];
         const { wx, wz } = cellToWorld(x, z);
-        // each segment records up to two adjacent cell indices; wall shows when either is revealed
-        // у пропасти стен нет — открытый обрыв
         const notPit = (ci: number) => ci >= 0 && !cells[ci].pit;
         if (!(c.open & N) && notPit(idx(x, z)) && (inBounds(x, z - 1) ? notPit(idx(x, z - 1)) : true))
-          segs.push({ horizontal: true, px: wx, pz: wz - CELL / 2, ca: idx(x, z), cb: inBounds(x, z - 1) ? idx(x, z - 1) : -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36 });
+          segs.push({ horizontal: true, px: wx, pz: wz - CELL / 2, ca: idx(x, z), cb: inBounds(x, z - 1) ? idx(x, z - 1) : -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36, variant: Math.floor(rnd() * 12) });
         if (!(c.open & WE) && notPit(idx(x, z)) && (inBounds(x - 1, z) ? notPit(idx(x - 1, z)) : true))
-          segs.push({ horizontal: false, px: wx - CELL / 2, pz: wz, ca: idx(x, z), cb: inBounds(x - 1, z) ? idx(x - 1, z) : -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36 });
+          segs.push({ horizontal: false, px: wx - CELL / 2, pz: wz, ca: idx(x, z), cb: inBounds(x - 1, z) ? idx(x - 1, z) : -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36, variant: Math.floor(rnd() * 12) });
         if (x === W - 1 && !(c.open & E) && notPit(idx(x, z)))
-          segs.push({ horizontal: false, px: wx + CELL / 2, pz: wz, ca: idx(x, z), cb: -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36 });
+          segs.push({ horizontal: false, px: wx + CELL / 2, pz: wz, ca: idx(x, z), cb: -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36, variant: Math.floor(rnd() * 12) });
         if (z === H - 1 && !(c.open & S) && notPit(idx(x, z)))
-          segs.push({ horizontal: true, px: wx, pz: wz + CELL / 2, ca: idx(x, z), cb: -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36 });
+          segs.push({ horizontal: true, px: wx, pz: wz + CELL / 2, ca: idx(x, z), cb: -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36, variant: Math.floor(rnd() * 12) });
       }
     }
     this.wallMeta = segs;
@@ -358,25 +374,81 @@ export class Scene3D {
         this.cellWalls.get(ci)!.push(wi);
       }
     });
+    // материал стен с инстанс-вариантами из wall_atlas
+    const wallMat = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0.02 });
+    if (this.wallTex) wallMat.map = this.wallTex;
+    const WALL_COLS = 4, WALL_ROWS = 3;
+    wallMat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <uv_vertex>",
+        `attribute float aVariant;
+        varying vec2 vAtlasUv;
+        #include <uv_vertex>
+        float vCol = mod(aVariant, ${WALL_COLS.toFixed(1)});
+        float vRow = floor(aVariant / ${WALL_COLS.toFixed(1)});
+        vAtlasUv = uv * vec2(${1/WALL_COLS}, ${1/WALL_ROWS}) + vec2(vCol * ${1/WALL_COLS}, (${WALL_ROWS-1}.0 - vRow) * ${1/WALL_ROWS});`
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <map_fragment>",
+        `#ifdef USE_MAP
+          vec4 sampledDiffuseColor = texture2D(map, vAtlasUv);
+          #ifdef DECODE_VIDEO_TEXTURE
+            sampledDiffuseColor = sRGBTransferEOTF(sampledDiffuseColor);
+          #endif
+          diffuseColor *= sampledDiffuseColor;
+        #endif`
+      );
+    };
     this.walls = new THREE.InstancedMesh(wallGeo, wallMat, segs.length * 2);
     this.walls.frustumCulled = false;
+    // instance attribute для варианта текстуры
+    const variantArr = new Float32Array(segs.length * 2);
+    for (let wi = 0; wi < segs.length; wi++) {
+      variantArr[wi * 2] = segs[wi].variant;
+      variantArr[wi * 2 + 1] = segs[wi].variant;
+    }
+    wallGeo.setAttribute("aVariant", new THREE.InstancedBufferAttribute(variantArr, 1));
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
     for (let i = 0; i < segs.length * 2; i++) this.walls.setMatrixAt(i, zero);
     add(this.walls);
 
-    // край подземелья — крупные неровные глыбы, разбросанные по периметру
+    // край подземелья — крупные неровные глыбы с текстурой wall_atlas
     const borderGeo = new THREE.BoxGeometry(CELL * 1.2, 1, CELL * 1.2);
-    const borderMat = this.tileMaterial(2, 0.9);
-    borderMat.color.setHex(0x5a6075);
+    const borderMat = new THREE.MeshStandardMaterial({ color: 0x5a6075, roughness: 0.9, metalness: 0.02 });
+    if (this.wallTex) borderMat.map = this.wallTex;
+    borderMat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <uv_vertex>",
+        `attribute float aVariant;
+        varying vec2 vAtlasUv;
+        #include <uv_vertex>
+        float vCol = mod(aVariant, 4.0);
+        float vRow = floor(aVariant / 4.0);
+        vAtlasUv = uv * vec2(0.25, 0.3333) + vec2(vCol * 0.25, (2.0 - vRow) * 0.3333);`
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <map_fragment>",
+        `#ifdef USE_MAP
+          vec4 sampledDiffuseColor = texture2D(map, vAtlasUv);
+          #ifdef DECODE_VIDEO_TEXTURE
+            sampledDiffuseColor = sRGBTransferEOTF(sampledDiffuseColor);
+          #endif
+          diffuseColor *= sampledDiffuseColor;
+        #endif`
+      );
+    };
     this.borderBlocks = new THREE.InstancedMesh(borderGeo, borderMat, segs.length);
     this.borderBlocks.frustumCulled = false;
+    const borderVariantArr = new Float32Array(segs.length);
+    for (let wi = 0; wi < segs.length; wi++) borderVariantArr[wi] = segs[wi].variant;
+    borderGeo.setAttribute("aVariant", new THREE.InstancedBufferAttribute(borderVariantArr, 1));
     for (let i = 0; i < segs.length; i++) this.borderBlocks.setMatrixAt(i, zero);
     add(this.borderBlocks);
     for (const s of segs) {
       if (s.cb === -1) {
-        s.bh = 1.8 + rnd() * 2.2;     // высота глыбы 1.8–4.0
-        s.byaw = (rnd() - 0.5) * 0.6; // поворот ±17°
-        s.bjx = (rnd() - 0.5) * 0.55; // сдвиг
+        s.bh = 1.8 + rnd() * 2.2;
+        s.byaw = (rnd() - 0.5) * 0.6;
+        s.bjx = (rnd() - 0.5) * 0.55;
         s.bjz = (rnd() - 0.5) * 0.55;
       }
     }

@@ -8,6 +8,8 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { W, H, CELL, N, E, S, WE, idx, inBounds, LAIR_CELLS, PIT_CELLS, avatarUrl, AVATAR_MODEL, type Cell, type Player } from "./model";
 
 const HALF = (W * CELL) / 2;
+/** Нулевая матрица: полностью убирает инстанс (не оставляет плоских «донышек»). */
+const ZERO_M4 = new THREE.Matrix4().makeScale(0, 0, 0);
 export const cellToWorld = (x: number, z: number) => ({
   wx: x * CELL - HALF + CELL / 2,
   wz: z * CELL - HALF + CELL / 2,
@@ -29,13 +31,14 @@ export class Scene3D {
 
   private floorMeshes: THREE.InstancedMesh[] = [];
   private overMeshes: THREE.InstancedMesh[] = [];
-  private overLoc: ({ mesh: THREE.InstancedMesh; k: number } | null)[] = [];
+  private overLoc: ({ mesh: THREE.InstancedMesh; k: number; base: THREE.Matrix4 } | null)[] = [];
   private assetsReady: Promise<void>;
   private heroTemplates: (THREE.Group | null)[] = [];
   private dragonTemplate: THREE.Group | null = null;
   private tilesTex: THREE.Texture | null = null;
   private walls!: THREE.InstancedMesh;
-  private wallMeta: { horizontal: boolean; px: number; pz: number; ca: number; cb: number; h1: number; h2: number }[] = [];
+  private wallMeta: { horizontal: boolean; px: number; pz: number; ca: number; cb: number; h1: number; h2: number; bh?: number; byaw?: number; bjx?: number; bjz?: number }[] = [];
+  private borderBlocks!: THREE.InstancedMesh;
   private cellWalls = new Map<number, number[]>();
   private revealed = new Uint8Array(W * H);
   private revealAnim: { i: number; k: number }[] = [];
@@ -88,10 +91,10 @@ export class Scene3D {
     this.camera.position.copy(this.camCur);
     this.camera.lookAt(0, 0, 0);
 
-    this.scene.add(new THREE.AmbientLight(0x9aa0cc, 0.8));
-    const hemi = new THREE.HemisphereLight(0x9090c0, 0x2a2018, 0.7);
+    this.scene.add(new THREE.AmbientLight(0x9aa0cc, 0.9));
+    const hemi = new THREE.HemisphereLight(0x9898c8, 0x35302a, 1.0);
     this.scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffe8c0, 1.1);
+    const sun = new THREE.DirectionalLight(0xffe8c0, 1.35);
     sun.position.set(18, 30, 12);
     this.scene.add(sun);
 
@@ -255,7 +258,7 @@ export class Scene3D {
         m4.makeTranslation(wx, -0.11, wz);
         im.setMatrixAt(k, m4);
         const lair = cells[ci].lair;
-        const s = 0.85 + rnd() * 0.3;
+        const s = 1.05 + rnd() * 0.35; // открытые плиты — светлее, игра была слишком тёмной
         if (lair) col.setRGB(1.5 * s, 0.6 * s, 0.5 * s); // красноватые плиты логова
         else col.setRGB(s, s, s);
         im.setColorAt(k, col);
@@ -306,12 +309,16 @@ export class Scene3D {
       overBuckets[v].forEach((ci, k) => {
         const cx = ci % W, cz = Math.floor(ci / W);
         const { wx, wz } = cellToWorld(cx, cz);
-        m4.makeTranslation(wx, 0.21, wz);
+        // лёгкий разнобой: плиты повёрнуты и лежат на разной высоте
+        m4.makeRotationY((rnd() - 0.5) * 0.3);
+        const sy = 1 + (rnd() - 0.5) * 0.14;
+        m4.scale(new THREE.Vector3(0.95 + rnd() * 0.07, sy, 0.95 + rnd() * 0.07));
+        m4.setPosition(wx, 0.21 * sy, wz);
         im.setMatrixAt(k, m4);
         const s = 0.7 + rnd() * 0.5;
         col.setRGB(s, s, s);
         im.setColorAt(k, col);
-        this.overLoc[ci] = { mesh: im, k };
+        this.overLoc[ci] = { mesh: im, k, base: m4.clone() };
       });
       im.instanceMatrix.needsUpdate = true;
       im.frustumCulled = false;
@@ -355,6 +362,23 @@ export class Scene3D {
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
     for (let i = 0; i < segs.length * 2; i++) this.walls.setMatrixAt(i, zero);
     add(this.walls);
+
+    // край подземелья — крупные неровные блоки-«скалы», как стена на референсе
+    const borderGeo = new THREE.BoxGeometry(CELL * 0.98, 1, CELL * 0.42);
+    const borderMat = this.tileMaterial(2, 0.9);
+    borderMat.color.setHex(0x3c4150);
+    this.borderBlocks = new THREE.InstancedMesh(borderGeo, borderMat, segs.length);
+    this.borderBlocks.frustumCulled = false;
+    for (let i = 0; i < segs.length; i++) this.borderBlocks.setMatrixAt(i, zero);
+    add(this.borderBlocks);
+    for (const s of segs) {
+      if (s.cb === -1) {
+        s.bh = 1.15 + rnd() * 1.15;   // высота блока
+        s.byaw = (rnd() - 0.5) * 0.3; // поворот
+        s.bjx = (rnd() - 0.5) * 0.25; // сдвиг
+        s.bjz = (rnd() - 0.5) * 0.25;
+      }
+    }
 
     // lair gold hoard — emissive pile in the centre
     const hoard = new THREE.Group();
@@ -602,11 +626,22 @@ export class Scene3D {
       const otherRevealed =
         (s.ca >= 0 && this.revealed[s.ca] === 1) || (s.cb >= 0 && this.revealed[s.cb] === 1);
       if (!otherRevealed) continue;
-      // outer border walls stay low so they never hide the pawn from the camera
-      const hScale = s.cb === -1 ? 0.4 : 1;
+      if (s.cb === -1) {
+        // крупный неровный блок на краю подземелья
+        const h = s.bh ?? 1.6;
+        m4.makeRotationY((s.horizontal ? 0 : Math.PI / 2) + (s.byaw ?? 0));
+        m4.scale(new THREE.Vector3(1, h, 1));
+        m4.setPosition(s.px + (s.bjx ?? 0), 0.5 * h, s.pz + (s.bjz ?? 0));
+        this.borderBlocks.setMatrixAt(wi, m4);
+        this.borderBlocks.instanceMatrix.needsUpdate = true;
+        this.walls.setMatrixAt(wi * 2, ZERO_M4);
+        this.walls.setMatrixAt(wi * 2 + 1, ZERO_M4);
+        this.walls.instanceMatrix.needsUpdate = true;
+        continue;
+      }
       // два блока на пролёт, разная высота — неровная кромка кладки
       for (let half = 0; half < 2; half++) {
-        const h = (half === 0 ? s.h1 : s.h2) * hScale;
+        const h = half === 0 ? s.h1 : s.h2;
         const off = half === 0 ? -CELL / 4 : CELL / 4;
         m4.makeRotationY(s.horizontal ? 0 : Math.PI / 2);
         m4.scale(new THREE.Vector3(1, h, 1));
@@ -885,17 +920,22 @@ export class Scene3D {
     // reveal animations (blocks sink into the ground)
     if (this.revealAnim.length) {
       const m4 = new THREE.Matrix4();
+      const mShrink = new THREE.Matrix4();
       for (let i = this.revealAnim.length - 1; i >= 0; i--) {
         const ra = this.revealAnim[i];
         ra.k += dt * 2.6;
         const k = Math.min(1, ra.k);
         const s = 1 - k;
-        const x = ra.i % W, z = Math.floor(ra.i / W);
-        const { wx, wz } = cellToWorld(x, z);
-        m4.makeScale(1, Math.max(0.001, s), 1);
-        m4.setPosition(wx, 0.21 * s, wz);
         const loc = this.overLoc[ra.i];
-        if (loc) loc.mesh.setMatrixAt(loc.k, m4);
+        if (loc) {
+          if (k >= 1) {
+            // убрать блок полностью — плоское «донышко» на уровне пола мерцало (z-fighting)
+            loc.mesh.setMatrixAt(loc.k, ZERO_M4);
+          } else {
+            m4.copy(loc.base).multiply(mShrink.makeScale(1, Math.max(0.0001, s), 1));
+            loc.mesh.setMatrixAt(loc.k, m4);
+          }
+        }
         if (k >= 1) this.revealAnim.splice(i, 1);
       }
       for (const m of this.overMeshes) m.instanceMatrix.needsUpdate = true;

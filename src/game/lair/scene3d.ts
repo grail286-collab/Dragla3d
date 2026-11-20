@@ -366,14 +366,16 @@ export class Scene3D {
     // край подземелья — крупные неровные блоки-«скалы», как стена на референсе
     const borderGeo = new THREE.BoxGeometry(CELL * 0.98, 1, CELL * 0.42);
     const borderMat = this.tileMaterial(2, 0.9);
-    borderMat.color.setHex(0x3c4150);
+    borderMat.color.setHex(0x5a6075);
+    borderMat.emissive = new THREE.Color(0x1a2030);
+    borderMat.emissiveIntensity = 0.35;
     this.borderBlocks = new THREE.InstancedMesh(borderGeo, borderMat, segs.length);
     this.borderBlocks.frustumCulled = false;
     for (let i = 0; i < segs.length; i++) this.borderBlocks.setMatrixAt(i, zero);
     add(this.borderBlocks);
     for (const s of segs) {
       if (s.cb === -1) {
-        s.bh = 1.15 + rnd() * 1.15;   // высота блока
+        s.bh = 1.6 + rnd() * 1.6;     // высота блока — выше, чтобы было видно
         s.byaw = (rnd() - 0.5) * 0.3; // поворот
         s.bjx = (rnd() - 0.5) * 0.25; // сдвиг
         s.bjz = (rnd() - 0.5) * 0.25;

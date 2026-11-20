@@ -39,6 +39,7 @@ export class Scene3D {
   private walls!: THREE.InstancedMesh;
   private wallMeta: { horizontal: boolean; px: number; pz: number; ca: number; cb: number; h1: number; h2: number; bh?: number; byaw?: number; bjx?: number; bjz?: number }[] = [];
   private borderBlocks!: THREE.InstancedMesh;
+  private rimBlocks!: THREE.InstancedMesh;
   private cellWalls = new Map<number, number[]>();
   private revealed = new Uint8Array(W * H);
   private revealAnim: { i: number; k: number }[] = [];
@@ -363,23 +364,45 @@ export class Scene3D {
     for (let i = 0; i < segs.length * 2; i++) this.walls.setMatrixAt(i, zero);
     add(this.walls);
 
-    // край подземелья — массивные скальные стены, видны сразу
-    const borderGeo = new THREE.BoxGeometry(CELL * 1.3, 5, CELL * 2.2);
+    // край подземелья — мелкие неровные блоки (как было)
+    const borderGeo = new THREE.BoxGeometry(CELL * 0.98, 1, CELL * 0.42);
     const borderMat = this.tileMaterial(2, 0.9);
-    borderMat.color.setHex(0x6a7085);
-    borderMat.emissive = new THREE.Color(0x1a2030);
-    borderMat.emissiveIntensity = 0.2;
+    borderMat.color.setHex(0x3c4150);
     this.borderBlocks = new THREE.InstancedMesh(borderGeo, borderMat, segs.length);
     this.borderBlocks.frustumCulled = false;
     for (let i = 0; i < segs.length; i++) this.borderBlocks.setMatrixAt(i, zero);
     add(this.borderBlocks);
     for (const s of segs) {
       if (s.cb === -1) {
-        s.bh = 0.85 + rnd() * 0.35;   // масштаб высоты блока
+        s.bh = 1.15 + rnd() * 1.15;   // высота блока
         s.byaw = (rnd() - 0.5) * 0.3; // поворот
         s.bjx = (rnd() - 0.5) * 0.25; // сдвиг
         s.bjz = (rnd() - 0.5) * 0.25;
       }
+    }
+
+    // видимая окантовка по краю подземелья — высокие светлые блоки
+    const rimGeo = new THREE.BoxGeometry(CELL * 1.05, 3.5, CELL * 1.05);
+    const rimMat = new THREE.MeshStandardMaterial({ color: 0x8a8e9a, roughness: 0.8 });
+    this.rimBlocks = new THREE.InstancedMesh(rimGeo, rimMat, (W + H) * 2);
+    this.rimBlocks.frustumCulled = false;
+    for (let i = 0; i < (W + H) * 2; i++) this.rimBlocks.setMatrixAt(i, zero);
+    add(this.rimBlocks);
+    let ri = 0;
+    const rimM4 = new THREE.Matrix4();
+    for (let x = 0; x < W; x++) {
+      const { wx } = cellToWorld(x, 0);
+      rimM4.makeTranslation(wx, 1.75, -HALF - CELL * 0.52);
+      this.rimBlocks.setMatrixAt(ri++, rimM4);
+      rimM4.makeTranslation(wx, 1.75, HALF + CELL * 0.52);
+      this.rimBlocks.setMatrixAt(ri++, rimM4);
+    }
+    for (let z = 0; z < H; z++) {
+      const { wz } = cellToWorld(0, z);
+      rimM4.makeTranslation(-HALF - CELL * 0.52, 1.75, wz);
+      this.rimBlocks.setMatrixAt(ri++, rimM4);
+      rimM4.makeTranslation(HALF + CELL * 0.52, 1.75, wz);
+      this.rimBlocks.setMatrixAt(ri++, rimM4);
     }
 
     // lair gold hoard — emissive pile in the centre
@@ -632,7 +655,7 @@ export class Scene3D {
         const h = s.bh ?? 1.6;
         m4.makeRotationY((s.horizontal ? 0 : Math.PI / 2) + (s.byaw ?? 0));
         m4.scale(new THREE.Vector3(1, h, 1));
-        m4.setPosition(s.px + (s.bjx ?? 0), 2.5 * h, s.pz + (s.bjz ?? 0));
+        m4.setPosition(s.px + (s.bjx ?? 0), 0.5 * h, s.pz + (s.bjz ?? 0));
         this.borderBlocks.setMatrixAt(wi, m4);
         this.borderBlocks.instanceMatrix.needsUpdate = true;
         this.walls.setMatrixAt(wi * 2, ZERO_M4);

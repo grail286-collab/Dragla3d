@@ -443,7 +443,7 @@ export class DragonLairGame {
       let total: number;
       if (!ai) {
         const roll = await this.ui.encounter(
-          { kind: "monster", id: ev.id, name: ev.name, icon: def.icon, desc: def.desc, fail: def.fail, dc: ev.dc, bonus: bonus || undefined, deadly: def.deadly },
+          { kind: "monster", id: ev.id, name: ev.name, icon: def.icon, image: def.image, desc: def.desc, fail: def.fail, dc: ev.dc, bonus: bonus || undefined, deadly: def.deadly },
           () => M.rollD(20),
           () => this.audio.sfx("ui"),
         );

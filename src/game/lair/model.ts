@@ -170,22 +170,74 @@ export function genBoard(rnd: () => number): Cell[] {
 }
 
 // ---------------- Events ----------------
-export interface MonsterDef { id: string; name: string; dc: number; deadly: boolean; reward: [number, number]; stealPct: number; icon: string; desc: string; fail: string }
+export interface MonsterDef { id: string; name: string; dc: number; deadly: boolean; reward: [number, number]; stealPct: number; icon: string; desc: string; fail: string; image: string }
 const MONSTERS: MonsterDef[] = [
-  { id: "gremlin",  name: "Гремлин",          dc: 9,  deadly: false, reward: [10, 25], stealPct: 0.25,
-    icon: "👺",
-    desc: "Мелкий вредитель с острыми когтями бросается из тени и вгрызается в дорожные сумки.",
-    fail: "При поражении: −1 ❤, гремлин тащит часть вашего золота в свою нору." },
+  { id: "goblin",   name: "Гоблин-воришка",   dc: 8,  deadly: false, reward: [8, 20],  stealPct: 0.20,
+    icon: "👹", image: "monsters/goblin.png",
+    desc: "Худощавая тень с красными глазами — уже перебралась через ваши карманы, пока вы доставали меч.",
+    fail: "При поражении: −1 ❤, гоблин утаскивает часть золота в подполье." },
+  { id: "kobold",   name: "Кобольд",          dc: 9,  deadly: false, reward: [10, 25], stealPct: 0.25,
+    icon: "🦎", image: "monsters/cobold.png",
+    desc: "Мелкий ящер с острыми когтями бросается из тени и вгрызается в дорожные сумки.",
+    fail: "При поражении: −1 ❤, кобольд тащит часть золота в свою нору." },
   { id: "rat",      name: "Гигантская крыса", dc: 10, deadly: false, reward: [15, 30], stealPct: 0.30,
-    icon: "🐀",
+    icon: "🐀", image: "monsters/rat.png",
     desc: "Размером с волкодава. Шерсть клоками, а глаза горят голодным огнём — она уже слышала ваши шаги.",
     fail: "При поражении: −1 ❤ и откушенная котомка: крыса утаскивает часть золота." },
+  { id: "spider",   name: "Гигантский паук",  dc: 10, deadly: false, reward: [18, 35], stealPct: 0.35,
+    icon: "🕷️", image: "monsters/spider.png",
+    desc: "Паутина в коридоре не просто грязь — это сети охотника, что свисает с потолка каменной глыбой.",
+    fail: "При поражении: −1 ❤, яд сжимает мышцы — паук тащит золото в гнездо." },
+  { id: "slime",    name: "Слизень",          dc: 9,  deadly: false, reward: [12, 25], stealPct: 0.25,
+    icon: "🟢", image: "monsters/slime.png",
+    desc: "Живая лужа кислотной слизи медленно ползёт по стене. Не касайтесь — плоть шипит.",
+    fail: "При поражении: −1 ❤, кислота растворяет часть снаряжения и золота." },
+  { id: "ghost",    name: "Призрак",          dc: 11, deadly: false, reward: [20, 40], stealPct: 0.40,
+    icon: "👻", image: "monsters/ghost.png",
+    desc: "Полупрозрачный силуэт сквозит сквозь стены. Его крик — ледяной нож в ушах.",
+    fail: "При поражении: −1 ❤, холод высасывает силы — призрак забирает часть золота." },
   { id: "skeleton", name: "Скелет-страж",     dc: 12, deadly: false, reward: [25, 50], stealPct: 0.40,
-    icon: "💀",
+    icon: "💀", image: "monsters/skeleton.jpeg",
     desc: "Ржавый меч не ржавеет лишь от частого употребления. Страж до сих пор честно служит своему склепу.",
     fail: "При поражении: −1 ❤ и половина золота оседает в его склепе." },
-  { id: "vampire",  name: "Вампир",           dc: 15, deadly: true,  reward: [50, 90], stealPct: 1,
-    icon: "🧛",
+  { id: "cultist",  name: "Культист",         dc: 12, deadly: false, reward: [25, 50], stealPct: 0.40,
+    icon: "🐍", image: "monsters/cultist.png",
+    desc: "Последователь Змея вышел из тени с жезлом. В глазах безумие, в улыбке — призыв.",
+    fail: "При поражении: −1 ❤, культист забирает часть золота в жертву." },
+  { id: "witch",    name: "Ведьма",           dc: 13, deadly: false, reward: [30, 60], stealPct: 0.45,
+    icon: "🧙", image: "monsters/witch.jpeg",
+    desc: "Кривая фигура с косой и заплечной сумкой зелий. Глаза горят жёлтым, как лампады в склепе.",
+    fail: "При поражении: −1 ❤, ведьма проклинает кошелёк — часть золота исчезает." },
+  { id: "kobold_shaman", name: "Кобольд-шаман", dc: 13, deadly: false, reward: [30, 60], stealPct: 0.45,
+    icon: "🔮", image: "monsters/kobold_shaman.png",
+    desc: "Шаман в костяных доспехах жонглирует огненными шарами. Тотемы на стенах загораются.",
+    fail: "При поражении: −1 ❤, шаман забирает золото как дань духам." },
+  { id: "zombie",   name: "Зомби-воин",       dc: 13, deadly: false, reward: [30, 60], stealPct: 0.45,
+    icon: "🧟", image: "monsters/zombie_warrior.jpeg",
+    desc: "Восставший воин в прогнившей броне. Медленный, но упорный — как сама смерть.",
+    fail: "При поражении: −1 ❤, зомби вырывает часть золота из рук." },
+  { id: "troll",    name: "Пещерный троль",   dc: 14, deadly: false, reward: [35, 70], stealPct: 0.50,
+    icon: "🧌", image: "monsters/troll.png",
+    desc: "Громадина с дубиной размером с колонну. Земля дрожит под его шагами.",
+    fail: "При поражении: −1 ❤, троль давит золото в пыль." },
+  { id: "mimic",    name: "Мимик",            dc: 14, deadly: false, reward: [35, 70], stealPct: 0.50,
+    icon: "📦", image: "monsters/mimic.png",
+    desc: "Сундук приоткрылся — и оказалось, что внутри зубов больше, чем сокровищ.",
+    fail: "При поражении: −1 ❤, мимик заглатывает часть золота." },
+  { id: "minotaur", name: "Минотавр",         dc: 15, deadly: true,  reward: [50, 90], stealPct: 0.70,
+    icon: "🐂", image: "monsters/minotaur.png",
+    desc: "Бык с топором в лабиринте. Его рёв заглушает даже крики жертв.",
+    fail: "При поражении: смерть — минотавр не оставляет ничего." },
+  { id: "fire_imp", name: "Огненный бес",     dc: 14, deadly: true,  reward: [45, 85], stealPct: 0.60,
+    icon: "🔥", image: "monsters/fire_imp.png",
+    desc: "Маленький демон из раскалённых углей. Там, где он пролетает — пепел.",
+    fail: "При поражении: смерть — пламем поглощает всё." },
+  { id: "dragon_baby", name: "Дракончик",     dc: 15, deadly: true,  reward: [55, 100], stealPct: 0.80,
+    icon: "🐉", image: "monsters/dragon_baby.png",
+    desc: "Молодой дракон размером с лошадь. Его когти царапают камень, а дыхание — раскаляет сталь.",
+    fail: "При поражении: смерть — дракончик добавляет золото в свою кладку." },
+  { id: "vampire",  name: "Вампир",           dc: 16, deadly: true,  reward: [60, 110], stealPct: 1,
+    icon: "🧛", image: "monsters/vampire.png",
     desc: "Лорд тьмы не отпускает добычу. Его когти — как десять кинжалов, а взгляд стынет ледяной тоской.",
     fail: "При поражении: смерть — вампир забирает все сокровища." },
 ];
@@ -275,10 +327,10 @@ export interface Player {
 }
 
 export const STARTS: [number, number][] = [
-  [11, 0],   // top edge
-  [W - 1, 11], // right edge
-  [12, H - 1], // bottom edge
-  [0, 12],   // left edge
+  [0, 0],       // левый верхний угол
+  [W - 1, 0],   // правый верхний угол
+  [0, H - 1],   // левый нижний угол
+  [W - 1, H - 1], // правый нижний угол
 ];
 /** which STARTS slots are used for a given player count (spread out for 2 players) */
 const START_PICK: Record<number, number[]> = { 2: [0, 2], 3: [0, 1, 2], 4: [0, 1, 2, 3] };

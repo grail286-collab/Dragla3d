@@ -26,6 +26,7 @@ export interface EncounterOpts {
   id: string;
   name: string;
   icon: string;
+  image?: string;      // путь к картинке монстра (monsters/xxx.png)
   desc: string;        // атмосферное описание
   fail: string;        // «При поражении / При срабатывании…»
   dc: number;          // успех при total > dc
@@ -400,7 +401,7 @@ export class GameUI {
       const need = o.dc + 1;
       const card = el("div", `enc-card${o.kind === "trap" ? " trap" : ""}`);
       card.innerHTML = `
-        <div class="enc-art">${encounterArt(o.kind, o.id)}</div>
+        <div class="enc-art">${o.image ? `<img src="${o.image}" alt="${o.name}" class="enc-img">` : encounterArt(o.kind, o.id)}</div>
         <div class="enc-body">
           <div class="enc-head">
             <span class="enc-ico">${o.icon}</span>

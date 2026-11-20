@@ -311,11 +311,12 @@ export class Scene3D {
         const { wx, wz } = cellToWorld(cx, cz);
         // лёгкий разнобой: плиты повёрнуты и лежат на разной высоте
         m4.makeRotationY((rnd() - 0.5) * 0.3);
-        const sy = 1 + (rnd() - 0.5) * 0.14;
+        const isEdge = cx === 0 || cx === W - 1 || cz === 0 || cz === H - 1;
+        const sy = isEdge ? 8 + rnd() * 4 : 1 + (rnd() - 0.5) * 0.14; // периметр — высокие стены
         m4.scale(new THREE.Vector3(0.95 + rnd() * 0.07, sy, 0.95 + rnd() * 0.07));
         m4.setPosition(wx, 0.21 * sy, wz);
         im.setMatrixAt(k, m4);
-        const s = 0.7 + rnd() * 0.5;
+        const s = isEdge ? 0.55 + rnd() * 0.2 : 0.7 + rnd() * 0.5; // периметр — темнее
         col.setRGB(s, s, s);
         im.setColorAt(k, col);
         this.overLoc[ci] = { mesh: im, k, base: m4.clone() };

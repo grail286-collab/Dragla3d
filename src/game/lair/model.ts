@@ -370,10 +370,10 @@ export interface Player {
 }
 
 export const STARTS: [number, number][] = [
-  [0, 0],       // левый верхний угол
-  [W - 1, 0],   // правый верхний угол
-  [0, H - 1],   // левый нижний угол
-  [W - 1, H - 1], // правый нижний угол
+  [1, 1],         // левый верхний, смещён на 1 клетку внутрь
+  [W - 2, 1],     // правый верхний
+  [1, H - 2],     // левый нижний
+  [W - 2, H - 2], // правый нижний
 ];
 /** which STARTS slots are used for a given player count (spread out for 2 players) */
 const START_PICK: Record<number, number[]> = { 2: [0, 2], 3: [0, 1, 2], 4: [0, 1, 2, 3] };

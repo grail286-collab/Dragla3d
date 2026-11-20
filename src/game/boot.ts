@@ -54,6 +54,7 @@ export function startGame(canvas: HTMLCanvasElement): void {
   };
 
   let alive = true;
+  const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
   const orchestrate = async () => {
     await ui.title(readBest());
     for (;;) {
@@ -70,6 +71,12 @@ export function startGame(canvas: HTMLCanvasElement): void {
         ui.hint(null);
         ui.setBanner("Логово Дракона");
         ui.setPlayers(game.players, 0);
+        // intro camera sequence
+        await wait(2000);
+        scene.focusOn(11, 11);
+        await wait(2500);
+        scene.focusOn(game.players[0].x, game.players[0].z);
+        await wait(1500);
         await game.playMatch();
       } catch (e) {
         if (e !== RESTART) {

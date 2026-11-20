@@ -40,6 +40,8 @@ export class Scene3D {
   private bigWallTex: THREE.Texture | null = null;
   private wallMeshes: THREE.InstancedMesh[] = [];
   private wallOff: [number, number][] = [];
+  private wallTopMeshes: THREE.InstancedMesh[] = [];
+  private wallTopOff: [number, number][] = [];
   private wallMeta: { horizontal: boolean; px: number; pz: number; ca: number; cb: number; h1: number; h2: number; variant: number }[] = [];
   private outerWalls: THREE.InstancedMesh[] = [];
   private cellWalls = new Map<number, number[]>();
@@ -395,6 +397,28 @@ export class Scene3D {
       add(im);
     }
 
+    // ---------- wall tops — floor_atlas texture on top face of walls ----------
+    const topGeo = new THREE.BoxGeometry(CELL / 2 - 0.05, 0.06, 0.36);
+    const topBuckets: (typeof segs[0])[][] = Array.from({ length: 12 }, () => []);
+    for (const s of segs) topBuckets[s.variant].push(s);
+    this.wallTopMeshes = [];
+    this.wallTopOff = new Array(segs.length);
+    for (let v = 0; v < 12; v++) {
+      if (!topBuckets[v].length) {
+        this.wallTopMeshes.push(null as any);
+        continue;
+      }
+      const im = new THREE.InstancedMesh(topGeo, this.tileMaterial(v, "floor", 0.92), topBuckets[v].length * 2);
+      im.frustumCulled = false;
+      for (let i = 0; i < topBuckets[v].length * 2; i++) im.setMatrixAt(i, ZERO_M4);
+      topBuckets[v].forEach((s, k) => {
+        const wi = segToWi.get(s)!;
+        this.wallTopOff[wi] = [v, k * 2];
+      });
+      this.wallTopMeshes.push(im);
+      add(im);
+    }
+
     // ---------- outer walls — за пределами поля, big_wall (4×4 = 16 variants) ----------
     const outerGeo = new THREE.BoxGeometry(CELL * 1.1, 1, CELL * 1.1);
     const outerBuckets: { px: number; pz: number; h: number; yaw: number; variant: number }[][] = Array.from({ length: 16 }, () => []);
@@ -402,7 +426,7 @@ export class Scene3D {
       for (let z = -1; z <= H; z++) {
         if (x >= 0 && x < W && z >= 0 && z < H) continue;
         const { wx, wz } = cellToWorld(x, z);
-        const h = 3 + rnd() * 3;
+        const h = 2 + rnd() * 0.5;
         const yaw = (rnd() - 0.5) * 0.5;
         const v = Math.floor(rnd() * 16);
         outerBuckets[v].push({ px: wx, pz: wz, h, yaw, variant: v });
@@ -646,18 +670,34 @@ export class Scene3D {
       if (!otherRevealed) continue;
       const [meshIdx, baseK] = this.wallOff[wi];
       const im = this.wallMeshes[meshIdx];
-      if (!im) continue;
-      for (let half = 0; half < 2; half++) {
-        const h = half === 0 ? s.h1 : s.h2;
-        const off = half === 0 ? -CELL / 4 : CELL / 4;
-        m4.makeRotationY(s.horizontal ? 0 : Math.PI / 2);
-        m4.scale(new THREE.Vector3(1, h, 1));
-        const ox = s.horizontal ? off : 0;
-        const oz = s.horizontal ? 0 : off;
-        m4.setPosition(s.px + ox, 0.62 * h, s.pz + oz);
-        im.setMatrixAt(baseK + half, m4);
+      if (im) {
+        for (let half = 0; half < 2; half++) {
+          const h = half === 0 ? s.h1 : s.h2;
+          const off = half === 0 ? -CELL / 4 : CELL / 4;
+          m4.makeRotationY(s.horizontal ? 0 : Math.PI / 2);
+          m4.scale(new THREE.Vector3(1, h, 1));
+          const ox = s.horizontal ? off : 0;
+          const oz = s.horizontal ? 0 : off;
+          m4.setPosition(s.px + ox, 0.62 * h, s.pz + oz);
+          im.setMatrixAt(baseK + half, m4);
+        }
+        im.instanceMatrix.needsUpdate = true;
       }
-      im.instanceMatrix.needsUpdate = true;
+      // wall tops (floor texture)
+      const [topMeshIdx, topBaseK] = this.wallTopOff[wi];
+      const topIm = this.wallTopMeshes[topMeshIdx];
+      if (topIm) {
+        for (let half = 0; half < 2; half++) {
+          const h = half === 0 ? s.h1 : s.h2;
+          const off = half === 0 ? -CELL / 4 : CELL / 4;
+          m4.makeRotationY(s.horizontal ? 0 : Math.PI / 2);
+          const ox = s.horizontal ? off : 0;
+          const oz = s.horizontal ? 0 : off;
+          m4.setPosition(s.px + ox, h * 1.25 + 0.03, s.pz + oz);
+          topIm.setMatrixAt(topBaseK + half, m4);
+        }
+        topIm.instanceMatrix.needsUpdate = true;
+      }
     }
     void cells;
   }

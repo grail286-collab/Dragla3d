@@ -38,11 +38,10 @@ export class Scene3D {
   private floorTex: THREE.Texture | null = null;
   private wallTex: THREE.Texture | null = null;
   private bigWallTex: THREE.Texture | null = null;
-  private walls!: THREE.InstancedMesh;
   private wallMeshes: THREE.InstancedMesh[] = [];
-  private wallMeshOff: number[] = [];
-  private wallMeta: { horizontal: boolean; px: number; pz: number; ca: number; cb: number; h1: number; h2: number; variant: number; bh?: number; byaw?: number; bjx?: number; bjz?: number }[] = [];
-  private borderBlocks!: THREE.InstancedMesh;
+  private wallOff: [number, number][] = [];
+  private wallMeta: { horizontal: boolean; px: number; pz: number; ca: number; cb: number; h1: number; h2: number; variant: number }[] = [];
+  private outerWalls: THREE.InstancedMesh[] = [];
   private cellWalls = new Map<number, number[]>();
   private revealed = new Uint8Array(W * H);
   private revealAnim: { i: number; k: number }[] = [];
@@ -221,7 +220,6 @@ export class Scene3D {
   // ---------------- board construction ----------------
   async buildBoard(cells: Cell[], players: Player[]): Promise<void> {
     await this.assetsReady;
-    // teardown of the previous match's board
     if (this.boardGroup) {
       this.scene.remove(this.boardGroup);
       this.boardGroup.traverse((o) => {
@@ -232,7 +230,7 @@ export class Scene3D {
           for (const mm of mats) {
             const sm = mm as THREE.MeshStandardMaterial;
             const atlasTexs = [this.floorTex, this.wallTex, this.bigWallTex];
-            if (sm.map && !atlasTexs.includes(sm.map)) sm.map.dispose(); // cloned atlas slices
+            if (sm.map && !atlasTexs.includes(sm.map)) sm.map.dispose();
             mm.dispose();
           }
         }
@@ -256,15 +254,16 @@ export class Scene3D {
 
     const rnd = mulberryLite(12345);
     const add = (o: THREE.Object3D) => this.boardGroup!.add(o);
-
-    // floors — 12 stone-tile variants from floor_atlas (4×3 atlas), random per cell
-    const floorGeo = new THREE.BoxGeometry(CELL, 0.22, CELL);
     const m4 = new THREE.Matrix4();
     const col = new THREE.Color();
+    const ZERO_M4 = new THREE.Matrix4().makeScale(0, 0, 0);
+
+    // ---------- floors — 12 variants from floor_atlas (4×3) ----------
+    const floorGeo = new THREE.BoxGeometry(CELL, 0.22, CELL);
     const buckets: number[][] = Array.from({ length: 12 }, () => []);
     for (let z = 0; z < H; z++) {
       for (let x = 0; x < W; x++) {
-        if (cells[idx(x, z)].pit) continue; // во рву пола нет — бездна
+        if (cells[idx(x, z)].pit) continue;
         buckets[Math.floor(rnd() * 12)].push(idx(x, z));
       }
     }
@@ -278,18 +277,18 @@ export class Scene3D {
         m4.makeTranslation(wx, -0.11, wz);
         im.setMatrixAt(k, m4);
         const lair = cells[ci].lair;
-        const s = 1.05 + rnd() * 0.35; // открытые плиты — светлее, игра была слишком тёмной
-        if (lair) col.setRGB(1.5 * s, 0.6 * s, 0.5 * s); // красноватые плиты логова
+        const s = 1.05 + rnd() * 0.35;
+        if (lair) col.setRGB(1.5 * s, 0.6 * s, 0.5 * s);
         else col.setRGB(s, s, s);
         im.setColorAt(k, col);
       });
       im.instanceMatrix.needsUpdate = true;
-      im.frustumCulled = false; // instanced: origin-centred bounds would cull the whole board
+      im.frustumCulled = false;
       this.floorMeshes.push(im);
       add(im);
     }
 
-    // бездонный ров: чёрная шахта + оранжевое свечение глубины
+    // ---------- бездонный ров ----------
     {
       const shaftGeo = new THREE.BoxGeometry(CELL * 1.02, 2.4, CELL * 1.02);
       const shaftMat = new THREE.MeshStandardMaterial({ color: 0x04050a, roughness: 1 });
@@ -301,7 +300,7 @@ export class Scene3D {
       glow.frustumCulled = false;
       PIT_CELLS.forEach(([px, pz], k) => {
         const { wx, wz } = cellToWorld(px, pz);
-        m4.makeTranslation(wx, -1.45, wz); // верх шахты ниже уровня пола
+        m4.makeTranslation(wx, -1.45, wz);
         shaft.setMatrixAt(k, m4);
         m4.makeRotationX(-Math.PI / 2);
         m4.setPosition(wx, -0.9, wz);
@@ -310,12 +309,12 @@ export class Scene3D {
       add(shaft); add(glow);
     }
 
-    // unexplored overlays — big_wall atlas (4×4 = 16 variants) for closed tiles
-    const overGeo = new THREE.BoxGeometry(CELL * 0.98, 0.42, CELL * 0.98);
+    // ---------- unexplored overlays — big_wall (4×4 = 16 variants), разная высота ----------
+    const overGeo = new THREE.BoxGeometry(CELL * 0.98, 1, CELL * 0.98);
     const overBuckets: number[][] = Array.from({ length: 16 }, () => []);
     for (let z = 0; z < H; z++) {
       for (let x = 0; x < W; x++) {
-        if (cells[idx(x, z)].pit) continue; // ров виден сразу
+        if (cells[idx(x, z)].pit) continue;
         overBuckets[Math.floor(rnd() * 16)].push(idx(x, z));
       }
     }
@@ -324,19 +323,17 @@ export class Scene3D {
     for (let v = 0; v < 16; v++) {
       if (!overBuckets[v].length) continue;
       const mat = this.tileMaterial(v, "bigwall", 1);
-      mat.color.setHex(0x585858); // нейтральный тон, текстура big_wall даёт детали
+      mat.color.setHex(0x585858);
       const im = new THREE.InstancedMesh(overGeo, mat, overBuckets[v].length);
       overBuckets[v].forEach((ci, k) => {
         const cx = ci % W, cz = Math.floor(ci / W);
         const { wx, wz } = cellToWorld(cx, cz);
-        // лёгкий разнобой: плиты повёрнуты и лежат на разной высоте
+        const sy = 0.35 + rnd() * 0.3;
         m4.makeRotationY((rnd() - 0.5) * 0.3);
-        const isEdge = cx === 0 || cx === W - 1 || cz === 0 || cz === H - 1;
-        const sy = isEdge ? 8 + rnd() * 4 : 1 + (rnd() - 0.5) * 0.14; // периметр — высокие стены
         m4.scale(new THREE.Vector3(0.95 + rnd() * 0.07, sy, 0.95 + rnd() * 0.07));
         m4.setPosition(wx, 0.21 * sy, wz);
         im.setMatrixAt(k, m4);
-        const s = isEdge ? 0.55 + rnd() * 0.2 : 0.7 + rnd() * 0.5; // периметр — темнее
+        const s = 0.7 + rnd() * 0.5;
         col.setRGB(s, s, s);
         im.setColorAt(k, col);
         this.overLoc[ci] = { mesh: im, k, base: m4.clone() };
@@ -347,7 +344,7 @@ export class Scene3D {
       add(im);
     }
 
-    // walls — каждый пролёт из двух каменных блоков с текстурой wall_atlas (4×3 = 12 variants)
+    // ---------- walls — 12 bucketed InstancedMesh с wall_atlas ----------
     const wallGeo = new THREE.BoxGeometry(CELL / 2 - 0.05, 1.25, 0.34);
     const segs: typeof this.wallMeta = [];
     for (let z = 0; z < H; z++) {
@@ -355,14 +352,15 @@ export class Scene3D {
         const c = cells[idx(x, z)];
         const { wx, wz } = cellToWorld(x, z);
         const notPit = (ci: number) => ci >= 0 && !cells[ci].pit;
+        const v = Math.floor(rnd() * 12);
         if (!(c.open & N) && notPit(idx(x, z)) && (inBounds(x, z - 1) ? notPit(idx(x, z - 1)) : true))
-          segs.push({ horizontal: true, px: wx, pz: wz - CELL / 2, ca: idx(x, z), cb: inBounds(x, z - 1) ? idx(x, z - 1) : -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36, variant: Math.floor(rnd() * 12) });
+          segs.push({ horizontal: true, px: wx, pz: wz - CELL / 2, ca: idx(x, z), cb: inBounds(x, z - 1) ? idx(x, z - 1) : -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36, variant: v });
         if (!(c.open & WE) && notPit(idx(x, z)) && (inBounds(x - 1, z) ? notPit(idx(x - 1, z)) : true))
-          segs.push({ horizontal: false, px: wx - CELL / 2, pz: wz, ca: idx(x, z), cb: inBounds(x - 1, z) ? idx(x - 1, z) : -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36, variant: Math.floor(rnd() * 12) });
+          segs.push({ horizontal: false, px: wx - CELL / 2, pz: wz, ca: idx(x, z), cb: inBounds(x - 1, z) ? idx(x - 1, z) : -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36, variant: v });
         if (x === W - 1 && !(c.open & E) && notPit(idx(x, z)))
-          segs.push({ horizontal: false, px: wx + CELL / 2, pz: wz, ca: idx(x, z), cb: -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36, variant: Math.floor(rnd() * 12) });
+          segs.push({ horizontal: false, px: wx + CELL / 2, pz: wz, ca: idx(x, z), cb: -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36, variant: v });
         if (z === H - 1 && !(c.open & S) && notPit(idx(x, z)))
-          segs.push({ horizontal: true, px: wx, pz: wz + CELL / 2, ca: idx(x, z), cb: -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36, variant: Math.floor(rnd() * 12) });
+          segs.push({ horizontal: true, px: wx, pz: wz + CELL / 2, ca: idx(x, z), cb: -1, h1: 0.82 + rnd() * 0.36, h2: 0.82 + rnd() * 0.36, variant: v });
       }
     }
     this.wallMeta = segs;
@@ -374,86 +372,61 @@ export class Scene3D {
         this.cellWalls.get(ci)!.push(wi);
       }
     });
-    // материал стен с инстанс-вариантами из wall_atlas
-    const wallMat = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0.02 });
-    if (this.wallTex) wallMat.map = this.wallTex;
-    const WALL_COLS = 4, WALL_ROWS = 3;
-    wallMat.onBeforeCompile = (shader) => {
-      shader.vertexShader = shader.vertexShader.replace(
-        "#include <uv_vertex>",
-        `attribute float aVariant;
-        varying vec2 vAtlasUv;
-        #include <uv_vertex>
-        float vCol = mod(aVariant, ${WALL_COLS.toFixed(1)});
-        float vRow = floor(aVariant / ${WALL_COLS.toFixed(1)});
-        vAtlasUv = uv * vec2(${1/WALL_COLS}, ${1/WALL_ROWS}) + vec2(vCol * ${1/WALL_COLS}, (${WALL_ROWS-1}.0 - vRow) * ${1/WALL_ROWS});`
-      );
-      shader.fragmentShader = shader.fragmentShader.replace(
-        "#include <map_fragment>",
-        `#ifdef USE_MAP
-          vec4 sampledDiffuseColor = texture2D(map, vAtlasUv);
-          #ifdef DECODE_VIDEO_TEXTURE
-            sampledDiffuseColor = sRGBTransferEOTF(sampledDiffuseColor);
-          #endif
-          diffuseColor *= sampledDiffuseColor;
-        #endif`
-      );
-    };
-    this.walls = new THREE.InstancedMesh(wallGeo, wallMat, segs.length * 2);
-    this.walls.frustumCulled = false;
-    // instance attribute для варианта текстуры
-    const variantArr = new Float32Array(segs.length * 2);
-    for (let wi = 0; wi < segs.length; wi++) {
-      variantArr[wi * 2] = segs[wi].variant;
-      variantArr[wi * 2 + 1] = segs[wi].variant;
-    }
-    wallGeo.setAttribute("aVariant", new THREE.InstancedBufferAttribute(variantArr, 1));
-    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-    for (let i = 0; i < segs.length * 2; i++) this.walls.setMatrixAt(i, zero);
-    add(this.walls);
 
-    // край подземелья — крупные неровные глыбы с текстурой wall_atlas
-    const borderGeo = new THREE.BoxGeometry(CELL * 1.2, 1, CELL * 1.2);
-    const borderMat = new THREE.MeshStandardMaterial({ color: 0x5a6075, roughness: 0.9, metalness: 0.02 });
-    if (this.wallTex) borderMat.map = this.wallTex;
-    borderMat.onBeforeCompile = (shader) => {
-      shader.vertexShader = shader.vertexShader.replace(
-        "#include <uv_vertex>",
-        `attribute float aVariant;
-        varying vec2 vAtlasUv;
-        #include <uv_vertex>
-        float vCol = mod(aVariant, 4.0);
-        float vRow = floor(aVariant / 4.0);
-        vAtlasUv = uv * vec2(0.25, 0.3333) + vec2(vCol * 0.25, (2.0 - vRow) * 0.3333);`
-      );
-      shader.fragmentShader = shader.fragmentShader.replace(
-        "#include <map_fragment>",
-        `#ifdef USE_MAP
-          vec4 sampledDiffuseColor = texture2D(map, vAtlasUv);
-          #ifdef DECODE_VIDEO_TEXTURE
-            sampledDiffuseColor = sRGBTransferEOTF(sampledDiffuseColor);
-          #endif
-          diffuseColor *= sampledDiffuseColor;
-        #endif`
-      );
-    };
-    this.borderBlocks = new THREE.InstancedMesh(borderGeo, borderMat, segs.length);
-    this.borderBlocks.frustumCulled = false;
-    const borderVariantArr = new Float32Array(segs.length);
-    for (let wi = 0; wi < segs.length; wi++) borderVariantArr[wi] = segs[wi].variant;
-    borderGeo.setAttribute("aVariant", new THREE.InstancedBufferAttribute(borderVariantArr, 1));
-    for (let i = 0; i < segs.length; i++) this.borderBlocks.setMatrixAt(i, zero);
-    add(this.borderBlocks);
-    for (const s of segs) {
-      if (s.cb === -1) {
-        s.bh = 1.8 + rnd() * 2.2;
-        s.byaw = (rnd() - 0.5) * 0.6;
-        s.bjx = (rnd() - 0.5) * 0.55;
-        s.bjz = (rnd() - 0.5) * 0.55;
+    const wallBuckets: (typeof segs[0])[][] = Array.from({ length: 12 }, () => []);
+    for (const s of segs) wallBuckets[s.variant].push(s);
+    const segToWi = new Map<typeof segs[0], number>();
+    segs.forEach((s, wi) => segToWi.set(s, wi));
+    this.wallMeshes = [];
+    this.wallOff = new Array(segs.length);
+    for (let v = 0; v < 12; v++) {
+      if (!wallBuckets[v].length) {
+        this.wallMeshes.push(null as any);
+        continue;
+      }
+      const im = new THREE.InstancedMesh(wallGeo, this.tileMaterial(v, "wall", 0.92), wallBuckets[v].length * 2);
+      im.frustumCulled = false;
+      for (let i = 0; i < wallBuckets[v].length * 2; i++) im.setMatrixAt(i, ZERO_M4);
+      wallBuckets[v].forEach((s, k) => {
+        const wi = segToWi.get(s)!;
+        this.wallOff[wi] = [v, k * 2];
+      });
+      this.wallMeshes.push(im);
+      add(im);
+    }
+
+    // ---------- outer walls — за пределами поля, big_wall (4×4 = 16 variants) ----------
+    const outerGeo = new THREE.BoxGeometry(CELL * 1.1, 1, CELL * 1.1);
+    const outerBuckets: { px: number; pz: number; h: number; yaw: number; variant: number }[][] = Array.from({ length: 16 }, () => []);
+    for (let x = -1; x <= W; x++) {
+      for (let z = -1; z <= H; z++) {
+        if (x >= 0 && x < W && z >= 0 && z < H) continue;
+        const { wx, wz } = cellToWorld(x, z);
+        const h = 3 + rnd() * 3;
+        const yaw = (rnd() - 0.5) * 0.5;
+        const v = Math.floor(rnd() * 16);
+        outerBuckets[v].push({ px: wx, pz: wz, h, yaw, variant: v });
       }
     }
+    this.outerWalls = [];
+    for (let v = 0; v < 16; v++) {
+      if (!outerBuckets[v].length) continue;
+      const mat = this.tileMaterial(v, "bigwall", 0.9);
+      mat.color.setHex(0x4a4a4a);
+      const im = new THREE.InstancedMesh(outerGeo, mat, outerBuckets[v].length);
+      im.frustumCulled = false;
+      outerBuckets[v].forEach((s, k) => {
+        m4.makeRotationY(s.yaw);
+        m4.scale(new THREE.Vector3(1, s.h, 1));
+        m4.setPosition(s.px, 0.5 * s.h, s.pz);
+        im.setMatrixAt(k, m4);
+      });
+      im.instanceMatrix.needsUpdate = true;
+      this.outerWalls.push(im);
+      add(im);
+    }
 
-    // lair gold hoard — emissive pile in the centre
+    // ---------- lair gold hoard ----------
     const hoard = new THREE.Group();
     const gm = new THREE.MeshStandardMaterial({ color: 0xd8a020, emissive: 0x8a5a00, emissiveIntensity: 0.95, roughness: 0.35, metalness: 0.8 });
     for (let i = 0; i < 26; i++) {
@@ -472,7 +445,7 @@ export class Scene3D {
     this.dragon.position.set(hx + CELL / 2, 0, hz + CELL / 2);
     add(this.dragon);
 
-    // player start portals (colored corner markers) + pawns with avatar sprites
+    // player start portals + pawns
     const texLoader = new THREE.TextureLoader();
     for (const p of players) {
       const ring = new THREE.Mesh(
@@ -493,7 +466,6 @@ export class Scene3D {
       pawn.add(sprite);
       this.pawns.push(pawn);
       add(pawn);
-      // face the dungeon centre from the start
       const dl = Math.hypot(wx, wz);
       if (dl > 0.1) pawn.rotation.y = Math.atan2(-wx, -wz);
     }
@@ -506,55 +478,28 @@ export class Scene3D {
     this.activeRing.rotation.x = -Math.PI / 2;
     add(this.activeRing);
 
-    // highlight markers pool — светящееся кольцо + мягкое свечение плитки (по референсу)
-    const glowGeo = new THREE.PlaneGeometry(2.15, 2.15);
-    const mkGlow = (color: number) => {
-      const m = new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({
-        map: this.glowTexture(), color, transparent: true, opacity: 0,
-        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-      }));
-      m.rotation.x = -Math.PI / 2;
-      m.visible = false;
-      return m;
-    };
-    const hlGeo = new THREE.RingGeometry(0.5, 0.84, 40);
-    for (let i = 0; i < 4; i++) {
-      const hl = new THREE.Mesh(
-        hlGeo,
-        new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.0, side: THREE.DoubleSide }),
-      );
-      hl.rotation.x = -Math.PI / 2;
-      hl.visible = false;
-      this.highlights.push(hl);
-      add(hl);
-      const gl = mkGlow(0x86e86a);
-      this.highlightGlows.push(gl);
-      add(gl);
+    // highlight markers pool
+    const hlMat = new THREE.MeshBasicMaterial({ color: 0x55ff88, transparent: true, opacity: 0.65, side: THREE.DoubleSide });
+    const jlMat = new THREE.MeshBasicMaterial({ color: 0xffaa33, transparent: true, opacity: 0.65, side: THREE.DoubleSide });
+    const glowMatHL = new THREE.MeshBasicMaterial({ map: this.glowTexture(), transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending });
+    for (let i = 0; i < 40; i++) {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.58, 20), hlMat.clone());
+      ring.rotation.x = -Math.PI / 2; ring.visible = false; add(ring); this.highlights.push(ring);
+      const g = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4), glowMatHL.clone());
+      g.rotation.x = -Math.PI / 2; g.visible = false; add(g); this.highlightGlows.push(g);
     }
-    // jump targets (прыжок через пропасть) — ледяно-голубые
-    const jlGeo = new THREE.RingGeometry(0.44, 0.76, 40);
-    for (let i = 0; i < 4; i++) {
-      const jl = new THREE.Mesh(
-        jlGeo,
-        new THREE.MeshBasicMaterial({ color: 0x8ae8ff, transparent: true, opacity: 0.0, side: THREE.DoubleSide }),
-      );
-      jl.rotation.x = -Math.PI / 2;
-      jl.visible = false;
-      this.jumpHighlights.push(jl);
-      add(jl);
-      const gl = mkGlow(0x4db8ff);
-      this.jumpGlows.push(gl);
-      add(gl);
+    for (let i = 0; i < 20; i++) {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.58, 20), jlMat.clone());
+      ring.rotation.x = -Math.PI / 2; ring.visible = false; add(ring); this.jumpHighlights.push(ring);
+      const g = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4), glowMatHL.clone());
+      g.rotation.x = -Math.PI / 2; g.visible = false; add(g); this.jumpGlows.push(g);
     }
 
-    // particle bursts pool
-    for (let i = 0; i < 10; i++) this.bursts.push(this.makeBurst());
-
-    // reveal lair + the pit ring + the players' entrance cells from старта
-    for (const [lx, lz] of LAIR_CELLS) this.reveal(lx, lz, cells, true);
-    for (const [px, pz] of PIT_CELLS) this.reveal(px, pz, cells, true);
-    for (const p of players) this.reveal(p.x, p.z, cells, true);
+    // particle bursts
+    this.bursts = [];
+    for (let i = 0; i < 6; i++) this.bursts.push(this.makeBurst());
   }
+
 
   private buildPawn(color: number, avatarId: string): THREE.Group {
     const g = new THREE.Group();
@@ -698,21 +643,10 @@ export class Scene3D {
       const s = this.wallMeta[wi];
       const otherRevealed =
         (s.ca >= 0 && this.revealed[s.ca] === 1) || (s.cb >= 0 && this.revealed[s.cb] === 1);
-      if (s.cb === -1) {
-        // край подземелья — виден всегда, это естественная граница, а не секрет
-        const h = s.bh ?? 1.6;
-        m4.makeRotationY((s.horizontal ? 0 : Math.PI / 2) + (s.byaw ?? 0));
-        m4.scale(new THREE.Vector3(1, h, 1));
-        m4.setPosition(s.px + (s.bjx ?? 0), 0.5 * h, s.pz + (s.bjz ?? 0));
-        this.borderBlocks.setMatrixAt(wi, m4);
-        this.borderBlocks.instanceMatrix.needsUpdate = true;
-        this.walls.setMatrixAt(wi * 2, ZERO_M4);
-        this.walls.setMatrixAt(wi * 2 + 1, ZERO_M4);
-        this.walls.instanceMatrix.needsUpdate = true;
-        continue;
-      }
       if (!otherRevealed) continue;
-      // два блока на пролёт, разная высота — неровная кромка кладки
+      const [meshIdx, baseK] = this.wallOff[wi];
+      const im = this.wallMeshes[meshIdx];
+      if (!im) continue;
       for (let half = 0; half < 2; half++) {
         const h = half === 0 ? s.h1 : s.h2;
         const off = half === 0 ? -CELL / 4 : CELL / 4;
@@ -721,12 +655,13 @@ export class Scene3D {
         const ox = s.horizontal ? off : 0;
         const oz = s.horizontal ? 0 : off;
         m4.setPosition(s.px + ox, 0.62 * h, s.pz + oz);
-        this.walls.setMatrixAt(wi * 2 + half, m4);
+        im.setMatrixAt(baseK + half, m4);
       }
+      im.instanceMatrix.needsUpdate = true;
     }
-    this.walls.instanceMatrix.needsUpdate = true;
     void cells;
   }
+
 
   // ---------------- pawns ----------------
   placePawn(id: number, x: number, z: number): void {

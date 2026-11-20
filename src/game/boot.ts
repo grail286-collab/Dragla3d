@@ -53,13 +53,9 @@ export function startGame(canvas: HTMLCanvasElement): void {
     return best;
   };
 
-  // board for the first match (default party, replaced after the setup screen)
-  const firstBoard = scene.buildBoard(game.cells, game.players);
-
   let alive = true;
   const orchestrate = async () => {
     await ui.title(readBest());
-    await firstBoard;
     for (;;) {
       try {
         if (!alive) return;

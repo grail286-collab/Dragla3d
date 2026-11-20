@@ -363,19 +363,19 @@ export class Scene3D {
     for (let i = 0; i < segs.length * 2; i++) this.walls.setMatrixAt(i, zero);
     add(this.walls);
 
-    // край подземелья — крупные неровные блоки-«скалы», как стена на референсе
-    const borderGeo = new THREE.BoxGeometry(CELL * 0.98, 1, CELL * 0.42);
+    // край подземелья — массивные скальные стены, видны сразу
+    const borderGeo = new THREE.BoxGeometry(CELL * 1.3, 5, CELL * 2.2);
     const borderMat = this.tileMaterial(2, 0.9);
-    borderMat.color.setHex(0x5a6075);
+    borderMat.color.setHex(0x6a7085);
     borderMat.emissive = new THREE.Color(0x1a2030);
-    borderMat.emissiveIntensity = 0.35;
+    borderMat.emissiveIntensity = 0.2;
     this.borderBlocks = new THREE.InstancedMesh(borderGeo, borderMat, segs.length);
     this.borderBlocks.frustumCulled = false;
     for (let i = 0; i < segs.length; i++) this.borderBlocks.setMatrixAt(i, zero);
     add(this.borderBlocks);
     for (const s of segs) {
       if (s.cb === -1) {
-        s.bh = 1.6 + rnd() * 1.6;     // высота блока — выше, чтобы было видно
+        s.bh = 0.85 + rnd() * 0.35;   // масштаб высоты блока
         s.byaw = (rnd() - 0.5) * 0.3; // поворот
         s.bjx = (rnd() - 0.5) * 0.25; // сдвиг
         s.bjz = (rnd() - 0.5) * 0.25;
@@ -632,7 +632,7 @@ export class Scene3D {
         const h = s.bh ?? 1.6;
         m4.makeRotationY((s.horizontal ? 0 : Math.PI / 2) + (s.byaw ?? 0));
         m4.scale(new THREE.Vector3(1, h, 1));
-        m4.setPosition(s.px + (s.bjx ?? 0), 0.5 * h, s.pz + (s.bjz ?? 0));
+        m4.setPosition(s.px + (s.bjx ?? 0), 2.5 * h, s.pz + (s.bjz ?? 0));
         this.borderBlocks.setMatrixAt(wi, m4);
         this.borderBlocks.instanceMatrix.needsUpdate = true;
         this.walls.setMatrixAt(wi * 2, ZERO_M4);

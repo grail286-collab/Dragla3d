@@ -289,19 +289,30 @@ const TRAPS: TrapDef[] = [
     fail: "При срабатывании: смерть — песок не отпускает." },
 ];
 
-export interface ItemDef { id: string; name: string; desc: string; icon: string; artifact: boolean }
+export interface ItemDef { id: string; name: string; desc: string; icon: string; image: string; artifact: boolean }
 export const ITEMS: Record<string, ItemDef> = {
-  boots:    { id: "boots",    name: "Сапоги ветра",      desc: "+1 к броску d4 на движение", icon: "🥾", artifact: false },
-  amulet:   { id: "amulet",   name: "Амулет тени",       desc: "+2 к проверкам у спящего дракона", icon: "🧿", artifact: false },
-  blade:    { id: "blade",    name: "Клинок истребителя", desc: "+4 к проверкам против монстров", icon: "🗡️", artifact: true },
-  cloak:    { id: "cloak",    name: "Плащ ночи",         desc: "+4 к проверкам против ловушек", icon: "🧥", artifact: true },
-  ring:     { id: "ring",     name: "Кольцо невидимости", desc: "один раз спасает от проснувшегося дракона", icon: "💍", artifact: true },
-  dragonEye:{ id: "dragonEye",name: "Драконий глаз",     desc: "+50% золота при грабеже логова", icon: "🔮", artifact: true },
-  rope:     { id: "rope",     name: "Верёвка",           desc: "спуск в логово без проверки прыжка через пропасть", icon: "🪢", artifact: false },
-  potion:   { id: "potion",   name: "Зелье здоровья",    desc: "восстанавливает 1 жизнь (из инвентаря)", icon: "🧪", artifact: false },
+  // Обычные предметы
+  boots:       { id: "boots",       name: "Сапоги ветра",       desc: "+1 к броску d4 на движение", icon: "🥾", image: "items/old_sword.png", artifact: false },
+  amulet:      { id: "amulet",      name: "Амулет тени",        desc: "+2 к проверкам у спящего дракона", icon: "🧿", image: "items/amulet_luck.png", artifact: false },
+  rope:        { id: "rope",        name: "Верёвка",            desc: "спуск в логово без проверки прыжка через пропасть", icon: "🪢", image: "items/rope.png", artifact: false },
+  potion:      { id: "potion",      name: "Зелье здоровья",     desc: "восстанавливает 1 жизнь (из инвентаря)", icon: "🧪", image: "items/potion_health.png", artifact: false },
+  potionSpeed: { id: "potionSpeed", name: "Зелье скорости",     desc: "+2 к броску d4 на один ход", icon: "⚡", image: "items/potion_speed.png", artifact: false },
+  potionPass:  { id: "potionPass",  name: "Зелье проходимости", desc: "автоматический успех следующей проверки ловушки", icon: "🛡️", image: "items/potion_passage.jpeg", artifact: false },
+  pickaxe:     { id: "pickaxe",     name: "Кирка",              desc: "можно проложить короткий путь через стену (1 раз)", icon: "⛏️", image: "items/pickaxe.png", artifact: false },
+  key:         { id: "key",         name: "Ключ",               desc: "открывает любой запертый сундук или дверь", icon: "🗝️", image: "items/key.png", artifact: false },
+  mapFragment: { id: "mapFragment", name: "Обрывок карты",      desc: "показывает ближайшие 3 секрета на карте", icon: "🗺️", image: "items/map_fragment.png", artifact: false },
+  sleepBomb:   { id: "sleepBomb",   name: "Сонная бомба",       desc: "усыпляет дракона на 1 ход", icon: "💣", image: "items/sleep_bomb.png", artifact: false },
+  // Артефакты
+  blade:       { id: "blade",       name: "Клинок истребителя", desc: "+4 к проверкам против монстров", icon: "🗡️", image: "items/silver_sword.png", artifact: true },
+  cloak:       { id: "cloak",       name: "Плащ ночи",          desc: "+4 к проверкам против ловушек", icon: "🧥", image: "items/cloak_invisible.jpeg", artifact: true },
+  ring:        { id: "ring",        name: "Кольцо невидимости", desc: "один раз спасает от проснувшегося дракона", icon: "💍", image: "items/fate_stone.png", artifact: true },
+  dragonEye:   { id: "dragonEye",   name: "Драконий глаз",      desc: "+50% золота при грабеже логова", icon: "🔮", image: "items/cloak_fire.jpeg", artifact: true },
+  armor:       { id: "armor",       name: "Щит дракона",        desc: "блокирует 1 смертельный удар", icon: "🛡️", image: "items/armor.png", artifact: true },
+  spellScroll: { id: "spellScroll", name: "Свиток заклинания",  desc: "+3 к любой проверке (1 использование)", icon: "📜", image: "items/spell_scroll.png", artifact: true },
+  chest:       { id: "chest",       name: "Сундук",             desc: "содержит случайный артефакт", icon: "📦", image: "items/chest.png", artifact: true },
 };
-const COMMON_ITEMS = ["boots", "amulet", "rope"];
-const ARTIFACTS = ["blade", "cloak", "ring", "dragonEye"];
+const COMMON_ITEMS = ["boots", "amulet", "rope", "potion", "potionSpeed", "potionPass", "pickaxe", "key", "mapFragment", "sleepBomb"];
+const ARTIFACTS = ["blade", "cloak", "ring", "dragonEye", "armor", "spellScroll", "chest"];
 
 function assignEvents(cells: Cell[], rnd: () => number): void {
   const cx = 11.5, cz = 11.5;

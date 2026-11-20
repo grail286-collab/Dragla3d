@@ -414,7 +414,7 @@ export class DragonLairGame {
       p.gold += ev.amount;
       this.audio.sfx("pickup");
       this.scene.spawnBurst(x, z, 0xffd24a, 42, 3.0, 4.2);
-      if (!ai) await this.ui.info({ title: `+${ev.amount} золота!`, icon: "💰", text: `Вы нашли тайник. Теперь у вас <b>${p.gold}</b> золота.` });
+      if (!ai) await this.ui.info({ title: `+${ev.amount} золота!`, icon: "💰", image: "items/coins.jpeg", text: `Вы нашли тайник. Теперь у вас <b>${p.gold}</b> золота.` });
       else this.ui.log(`${p.name} нашёл ${ev.amount} золота`, "gold");
       this.checkpoint();
       return "OK";
@@ -431,7 +431,7 @@ export class DragonLairGame {
       }
       this.audio.sfx("pickup");
       this.scene.spawnBurst(x, z, 0x9fd8ff, 36, 2.6, 4.0);
-      if (!ai) await this.ui.info({ title: def.name, icon: def.icon, text: `${def.artifact ? "Артефакт! " : "Полезная вещь: "}${def.desc}.${ev.id === "potion" ? " Лежит в инвентаре (🎒)." : ""}` });
+      if (!ai) await this.ui.info({ title: def.name, icon: def.icon, image: def.image, text: `${def.artifact ? "Артефакт! " : "Полезная вещь: "}${def.desc}.${ev.id === "potion" ? " Лежит в инвентаре (🎒)." : ""}` });
       else this.ui.log(`${p.name} подобрал: ${def.name}`, "good");
       this.checkpoint();
       return "OK";
@@ -564,7 +564,7 @@ export class DragonLairGame {
         p.danger = Math.min(100, p.danger + 10);
         this.audio.sfx("pickup");
         this.scene.spawnBurst(p.x, p.z, 0xffd24a, 46, 3.4, 4.6);
-        await this.ui.info({ title: `+${loot} золота!`, icon: "💰", text: `Дракон не проснулся. У вас <b>${p.gold}</b> золота.<br>Опасность выросла до <b>${p.danger}%</b>.` });
+        await this.ui.info({ title: `+${loot} золота!`, icon: "💰", image: "items/lair_treasure.png", text: `Дракон не проснулся. У вас <b>${p.gold}</b> золота.<br>Опасность выросла до <b>${p.danger}%</b>.` });
         this.ui.setPlayers(this.players, this.currentId);
         this.checkpoint();
       }

@@ -18,7 +18,7 @@ export interface DiceOpts {
   avatar?: string;    // портрет игрока над окном
   skippable?: boolean;  // кнопка «Пропустить ход» под окном (резолвит 0)
 }
-export interface InfoOpts { title: string; icon?: string; text: string; button?: string }
+export interface InfoOpts { title: string; icon?: string; image?: string; text: string; button?: string }
 export interface ChoiceBtn { id: string; label: string; sub?: string; danger?: boolean; ghost?: boolean }
 
 export interface EncounterOpts {
@@ -291,7 +291,14 @@ export class GameUI {
   info(o: InfoOpts): Promise<void> {
     return new Promise((resolve) => {
       const node = el("div");
-      if (o.icon) node.appendChild(el("div", "icon", o.icon));
+      if (o.image) {
+        const imgWrap = el("div", "info-img-wrap");
+        const img = document.createElement("img");
+        img.src = o.image; img.alt = o.title; img.className = "info-img";
+        imgWrap.appendChild(img); node.appendChild(imgWrap);
+      } else if (o.icon) {
+        node.appendChild(el("div", "icon", o.icon));
+      }
       node.appendChild(el("h2", "", o.title));
       node.appendChild(el("div", "sub", o.text));
       const btns = el("div", "btns");
@@ -654,7 +661,7 @@ export class GameUI {
           const def = ITEMS[id];
           if (!def) continue;
           list.appendChild(el("div", "inv-row",
-            `<span class="inv-ico">${def.icon}</span><span class="inv-nm">${def.name}</span><span class="inv-ds">${def.desc}</span>`));
+            `<img src="${def.image}" class="inv-img" alt=""><span class="inv-nm">${def.name}</span><span class="inv-ds">${def.desc}</span>`));
         }
         if (p.potions > 0) {
           const row = el("div", "inv-row");

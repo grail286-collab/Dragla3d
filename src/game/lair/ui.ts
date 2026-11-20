@@ -210,7 +210,8 @@ export class GameUI {
     this.root.appendChild(btns);
 
     this.banner = el("div", "turn-banner", "Логово Дракона");
-    this.root.appendChild(this.banner);
+    // баннер скрыт по запросу
+    this.banner.style.display = "none";
 
     this.logBox = el("div", "event-log");
     this.root.appendChild(this.logBox);

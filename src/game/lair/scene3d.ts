@@ -625,9 +625,8 @@ export class Scene3D {
       const s = this.wallMeta[wi];
       const otherRevealed =
         (s.ca >= 0 && this.revealed[s.ca] === 1) || (s.cb >= 0 && this.revealed[s.cb] === 1);
-      if (!otherRevealed) continue;
       if (s.cb === -1) {
-        // крупный неровный блок на краю подземелья
+        // край подземелья — виден всегда, это естественная граница, а не секрет
         const h = s.bh ?? 1.6;
         m4.makeRotationY((s.horizontal ? 0 : Math.PI / 2) + (s.byaw ?? 0));
         m4.scale(new THREE.Vector3(1, h, 1));
@@ -639,6 +638,7 @@ export class Scene3D {
         this.walls.instanceMatrix.needsUpdate = true;
         continue;
       }
+      if (!otherRevealed) continue;
       // два блока на пролёт, разная высота — неровная кромка кладки
       for (let half = 0; half < 2; half++) {
         const h = half === 0 ? s.h1 : s.h2;

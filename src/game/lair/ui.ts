@@ -375,7 +375,7 @@ export class GameUI {
         tapHint.style.visibility = "hidden"; // сохраняем высоту окна — кубик не «прыгает»
         const final = roller();
         const tick = setInterval(() => onTick?.(), 100);
-        void this.dice3d.roll().then(() => {
+        void this.dice3d.roll(final).then(() => {
           clearInterval(tick);
           const total = final + (o.bonus ?? 0);
           const won = o.dc !== undefined && total > o.dc;
@@ -435,7 +435,7 @@ export class GameUI {
         dieHolder.classList.remove("awaiting");
         const final = roller();
         const tick = setInterval(() => onTick?.(), 100);
-        void this.dice3d.roll().then(() => {
+        void this.dice3d.roll(final).then(() => {
           clearInterval(tick);
           const total = final + (o.bonus ?? 0);
           const won = total > o.dc;

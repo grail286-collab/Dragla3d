@@ -17,7 +17,16 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 420, height: 860 } });
 page.on("pageerror", (e) => console.warn("pageerror:", String(e).slice(0, 120)));
 
-await page.goto(URL, { waitUntil: "networkidle", timeout: 60000 });
+for (let attempt = 1; attempt <= 4; attempt++) {
+  try {
+    await page.goto(URL, { waitUntil: "domcontentloaded", timeout: 90000 });
+    break;
+  } catch (e) {
+    console.warn(`goto attempt ${attempt} failed: ${String(e).slice(0, 80)}`);
+    if (attempt === 4) throw e;
+    await page.waitForTimeout(5000);
+  }
+}
 await page.waitForFunction(() => window.__GAME_READY__ === true, null, { timeout: 30000 });
 await page.waitForTimeout(1500);
 await page.screenshot({ path: join(OUT, "01-title.png") });

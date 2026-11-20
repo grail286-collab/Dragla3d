@@ -60,6 +60,9 @@ export class Dice3D {
     return t;
   }
 
+  /** Данные граней: наружная нормаль и «верх цифры» (в сторону угла с UV 0.5,0.97). */
+  private faceData: { n: THREE.Vector3; up: THREE.Vector3 }[] = [];
+
   private buildDie(sides: 4 | 20): THREE.Group {
     const g = new THREE.Group();
     const geo = sides === 4 ? new THREE.TetrahedronGeometry(0.78) : new THREE.IcosahedronGeometry(0.78);
@@ -67,6 +70,20 @@ export class Dice3D {
     // разбиваем на группы по граням и разворачиваем UV каждой грани на всю текстуру
     const pos = geo.getAttribute("position");
     const uv = geo.getAttribute("uv") as THREE.BufferAttribute;
+    this.faceData = [];
+    {
+      const v0 = new THREE.Vector3(), v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
+      const e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
+      for (let f = 0; f < pos.count / 3; f++) {
+        v0.fromBufferAttribute(pos, f * 3);
+        v1.fromBufferAttribute(pos, f * 3 + 1);
+        v2.fromBufferAttribute(pos, f * 3 + 2);
+        const n = e1.subVectors(v1, v0).cross(e2.subVectors(v2, v0)).clone().normalize();
+        const up = v0.clone().sub(v1.clone().add(v2).multiplyScalar(0.5));
+        up.addScaledVector(n, -up.dot(n)).normalize();
+        this.faceData.push({ n, up });
+      }
+    }
     const faceCount = pos.count / 3;
     for (let f = 0; f < faceCount; f++) {
       geo.addGroup(f * 3, 3, f);
@@ -128,21 +145,40 @@ export class Dice3D {
     this.raf = 0;
   }
 
-  /** Кувыркание с затуханием и плавной остановкой. Резолвится, когда кубик замер. */
-  roll(): Promise<void> {
+  /**
+   * Кватернион, при котором грань `value` смотрит на камеру цифрой вверх.
+   * Локальный базис грани (up, right, normal) поворачивается в мировой
+   * (экранный «верх», боковая ось, направление на камеру).
+   */
+  private faceQuaternion(value: number): THREE.Quaternion {
+    const f = this.faceData[value - 1];
+    const camDir = new THREE.Vector3(0, 0.14, 0.99).normalize(); // направление от кубика к камере
+    const wA = new THREE.Vector3(0, 1, 0).addScaledVector(camDir, -camDir.y).normalize(); // «верх» на грани
+    const wB = new THREE.Vector3().crossVectors(camDir, wA); // боковая ось
+    const W = new THREE.Matrix4().makeBasis(wA, wB, camDir);
+    const lB = new THREE.Vector3().crossVectors(f.n, f.up);
+    const L = new THREE.Matrix4().makeBasis(f.up, lB, f.n);
+    return new THREE.Quaternion().setFromRotationMatrix(W.multiply(L.invert()));
+  }
+
+  /**
+   * Кувыркание с затуханием; кубик останавливается гранью `value` к игроку.
+   * Резолвится, когда кубик замер на выпавшей грани.
+   */
+  roll(value: number): Promise<void> {
     return new Promise((resolve) => {
-      if (!this.die) { resolve(); return; }
+      if (!this.die || value < 1 || value > this.faceData.length) { resolve(); return; }
       const die = this.die;
       const DUR = 1.1;
-      const SETTLE = 0.3;
+      const SETTLE = 0.4;
       let t = 0;
       let last = performance.now();
       const vx = (10 + Math.random() * 8) * (Math.random() < 0.5 ? -1 : 1);
       const vy = (10 + Math.random() * 8) * (Math.random() < 0.5 ? -1 : 1);
       const vz = (8 + Math.random() * 6) * (Math.random() < 0.5 ? -1 : 1);
-      const targetX = (Math.random() - 0.5) * 0.8;
-      const targetY = Math.random() * Math.PI * 2;
-      let sx = 0, sy = 0, sz = 0; // поза на момент начала остановки
+      const qTarget = this.faceQuaternion(value);
+      const q0 = new THREE.Quaternion();
+      let captured = false;
       this.rolling = true;
 
       const step = (now: number) => {
@@ -158,15 +194,13 @@ export class Dice3D {
           die.rotation.y += vy * spin * dt;
           die.rotation.z += vz * spin * dt;
           die.position.y = Math.abs(Math.sin(k * Math.PI * 3)) * 0.45 * (1 - k);
-          if (k >= 1) { sx = die.rotation.x; sy = die.rotation.y; sz = die.rotation.z; }
+          if (k >= 1 && !captured) { captured = true; q0.copy(die.quaternion); }
           return;
         }
-        // плавная доводка до читаемой позы — после неё кубик замирает насовсем
+        // плавная доводка: кубик разворачивается выпавшей гранью к игроку и замирает
         const ks = Math.min(1, (t - DUR) / SETTLE);
         const e = ks * ks * (3 - 2 * ks); // smoothstep
-        die.rotation.x = sx + (targetX - sx) * e;
-        die.rotation.y = sy + (targetY - sy) * e;
-        die.rotation.z = sz * (1 - e);
+        die.quaternion.slerpQuaternions(q0, qTarget, e);
         die.position.y = 0;
         if (ks >= 1) {
           this.rolling = false;
